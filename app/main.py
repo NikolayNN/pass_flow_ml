@@ -1,10 +1,11 @@
 """People Counter with YOLOv8 + DeepSORT
 ================================================
-▶ Версия 7 — стабилизация трека для предотвращения двойного счёта
+▶ Версия 8 — фильтрация коротких треков и стабилизация
 
 Добавлено:
 - Сглаживание координат маркера с помощью скользящего среднего
 - Гистерезис по направлению (min_shift), чтобы избежать повторных срабатываний при скачках
+- Отсев коротких треков по длительности и смещению
 
 """
 
@@ -40,6 +41,8 @@ TRAIL_LEN = 30
 # Стабилизация
 SMOOTH_WINDOW = 5
 MIN_SHIFT_PX = 10
+MIN_TRACK_FRAMES = 10
+MIN_TRACK_PATH = 30
 
 # ── Вспомогательные функции ─────────────────────────────────────
 def intersect_line(p1, p2, line):
@@ -56,7 +59,17 @@ def is_vertical(line):
     return abs(x1 - x2) > abs(y1 - y2)
 
 # ── Основная функция ───────────────────────────────────────────
-def run(src, weights, csv_out, line_norm, h_align, v_align, debug=False):
+def run(
+    src,
+    weights,
+    csv_out,
+    line_norm,
+    h_align,
+    v_align,
+    min_track_frames=MIN_TRACK_FRAMES,
+    min_track_path=MIN_TRACK_PATH,
+    debug=False,
+):
     global counter_in, counter_out
 
     model = YOLO(weights)
@@ -127,6 +140,13 @@ def run(src, weights, csv_out, line_norm, h_align, v_align, debug=False):
             smoothed = np.mean(tr.smooth_hist, axis=0).astype(int)
             cx, cy = smoothed
 
+            # Статистика трека для фильтрации коротких маршрутов
+            if not hasattr(tr, "start_pos"):
+                tr.start_pos = (cx, cy)
+                tr.frame_count = 0
+            tr.frame_count += 1
+            tr.last_pos = (cx, cy)
+
             # Рисуем маркер
             cv2.circle(frame, (cx, cy), POINT_RADIUS, POINT_COLOR_BG, -1)
             cv2.circle(frame, (cx, cy), POINT_RADIUS, POINT_COLOR_FG, 2)
@@ -144,6 +164,12 @@ def run(src, weights, csv_out, line_norm, h_align, v_align, debug=False):
                 d = (cx - tr.hist[-2][0]) if vertical else (cy - tr.hist[-2][1])
                 if abs(d) < MIN_SHIFT_PX:
                     continue
+
+                track_len = getattr(tr, "frame_count", 0)
+                path_shift = np.linalg.norm(np.subtract(tr.last_pos, tr.start_pos))
+                if track_len < min_track_frames or path_shift < min_track_path:
+                    continue
+
                 if d < 0 and tid not in counted_ids_in:
                     counter_in += 1
                     counted_ids_in.add(tid)
@@ -172,6 +198,8 @@ if __name__ == "__main__":
     parser.add_argument("--line", nargs=4, type=float, required=True, metavar=("x1", "y1", "x2", "y2"), help="нормированные координаты линии (0–1)")
     parser.add_argument("--h-align", choices=["left", "center", "right"], default="center", help="горизонтальное выравнивание маркера")
     parser.add_argument("--v-align", choices=["top", "center", "bottom"], default="center", help="вертикальное выравнивание маркера")
+    parser.add_argument("--min-track-frames", type=int, default=MIN_TRACK_FRAMES, help="минимальная длина трека (кадры)")
+    parser.add_argument("--min-track-path", type=float, default=MIN_TRACK_PATH, help="минимальный сдвиг трека (px)")
     parser.add_argument("--debug", action="store_true", help="печать координат первого маркера")
     args = parser.parse_args()
 
@@ -182,5 +210,7 @@ if __name__ == "__main__":
         args.line,
         args.h_align,
         args.v_align,
+        args.min_track_frames,
+        args.min_track_path,
         debug=args.debug,
     )
