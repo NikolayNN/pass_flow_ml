@@ -88,6 +88,9 @@ def run(
         int(line_norm[3] * H),
     ]
     vertical = is_vertical(line)
+    # Precompute the normal vector of the line pointing to its left side
+    vec = (line[2] - line[0], line[3] - line[1])
+    line_normal = (-vec[1], vec[0])
 
     frame_idx = 0
     rows: list[list[int]] = []
@@ -146,15 +149,26 @@ def run(
             for p1, p2 in zip(tr.hist, tr.hist[1:]):
                 cv2.line(frame, p1, p2, (255, 0, 0), 2)
 
+            # Draw the displacement vector from the first point
+            cv2.arrowedLine(
+                frame,
+                tr.start_pt,
+                (cx, cy),
+                (0, 255, 255),
+                2,
+                tipLength=0.3,
+            )
+
             # Counting on crossing
             if len(tr.hist) >= 2 and intersect_line(tr.hist[-2], tr.hist[-1], line):
                 disp = np.hypot(cx - tr.start_pt[0], cy - tr.start_pt[1])
                 if tr.frames >= min_frames and disp >= min_disp:
-                    delta = (cx - tr.hist[-2][0]) if vertical else (cy - tr.hist[-2][1])
-                    if delta < 0 and tid not in counted_ids_in:
+                    v = (cx - tr.start_pt[0], cy - tr.start_pt[1])
+                    dot = v[0] * line_normal[0] + v[1] * line_normal[1]
+                    if dot > 0 and tid not in counted_ids_in:
                         counter_in += 1
                         counted_ids_in.add(tid)
-                    elif delta > 0 and tid not in counted_ids_out:
+                    elif dot < 0 and tid not in counted_ids_out:
                         counter_out += 1
                         counted_ids_out.add(tid)
 
