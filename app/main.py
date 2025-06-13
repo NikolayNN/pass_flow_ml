@@ -54,11 +54,15 @@ def run(
     line_norm: list[float],
     trail_len: int = 2,
     point_radius: int = 4,
+    min_frames: int = 10,
+    min_disp: float = 20.0,
 ) -> None:
     """Process stream and save processed.mp4 + CSV into *out_dir*.
 
     * trail_len   – number of previous points kept and drawn for each track;
     * point_radius – visual size of the base‑point dot.
+    * min_frames   – minimum track length in frames for counting;
+    * min_disp     – minimum displacement in pixels for counting.
     """
     global counter_in, counter_out
 
@@ -127,6 +131,12 @@ def run(
             cy = b
             cv2.circle(frame, (cx, cy), point_radius, (0, 0, 255), -1)
 
+            # Track lifetime and start point for filtering
+            if not hasattr(tr, "frames"):
+                tr.frames = 0
+                tr.start_pt = (cx, cy)
+            tr.frames += 1
+
             # History of trail_len points
             tr.hist = getattr(tr, "hist", []) + [(cx, cy)]
             if len(tr.hist) > trail_len:
@@ -138,13 +148,15 @@ def run(
 
             # Counting on crossing
             if len(tr.hist) >= 2 and intersect_line(tr.hist[-2], tr.hist[-1], line):
-                delta = (cx - tr.hist[-2][0]) if vertical else (cy - tr.hist[-2][1])
-                if delta < 0 and tid not in counted_ids_in:
-                    counter_in += 1
-                    counted_ids_in.add(tid)
-                elif delta > 0 and tid not in counted_ids_out:
-                    counter_out += 1
-                    counted_ids_out.add(tid)
+                disp = np.hypot(cx - tr.start_pt[0], cy - tr.start_pt[1])
+                if tr.frames >= min_frames and disp >= min_disp:
+                    delta = (cx - tr.hist[-2][0]) if vertical else (cy - tr.hist[-2][1])
+                    if delta < 0 and tid not in counted_ids_in:
+                        counter_in += 1
+                        counted_ids_in.add(tid)
+                    elif delta > 0 and tid not in counted_ids_out:
+                        counter_out += 1
+                        counted_ids_out.add(tid)
 
         # Overlay counts
         cv2.putText(frame, f"IN:  {counter_in}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 160, 0), 2)
@@ -171,6 +183,8 @@ if __name__ == "__main__":
     parser.add_argument("--save-csv", help="CSV filename or full path; default <output>/stats.csv")
     parser.add_argument("--trail-len", type=int, default=15, help="number of points in the visual track")
     parser.add_argument("--point-radius", type=int, default=4, help="radius of the base‑point circle")
+    parser.add_argument("--min-frames", type=int, default=10, help="minimum track length in frames to count")
+    parser.add_argument("--min-displacement", type=float, default=20.0, help="minimum displacement in pixels to count")
     parser.add_argument(
         "--line", nargs=4, type=float, required=True, metavar=("x1", "y1", "x2", "y2"),
         help="normalized coordinates (0–1) of the reference line",
@@ -187,4 +201,6 @@ if __name__ == "__main__":
         line_norm=args.line,
         trail_len=args.trail_len,
         point_radius=args.point_radius,
+        min_frames=args.min_frames,
+        min_disp=args.min_displacement,
     )
