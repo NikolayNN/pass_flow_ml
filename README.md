@@ -1,0 +1,1 @@
+python app/main.py --source input/out4_.mp4 --output output --weights weights/yolov8x.pt --trail-len 30 --line 0.3 0 0.3 1
