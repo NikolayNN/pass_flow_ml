@@ -53,6 +53,7 @@ def run(
     out_dir: str,
     csv_out: str,
     line_norm: list[float],
+    line2_norm: list[float] | None = None,
     trail_len: int = 2,
     point_radius: int = 4,
     min_frames: int = 10,
@@ -65,6 +66,7 @@ def run(
     * point_radius – visual size of the base‑point dot.
     * min_frames   – minimum track length in frames for counting;
     * min_disp     – minimum displacement in pixels for counting.
+    * line2_norm   – optional second line for strict A->B/B->A counting.
     """
     global counter_in, counter_out
 
@@ -96,6 +98,19 @@ def run(
     if reverse:
         line_normal = (-line_normal[0], -line_normal[1])
 
+    line2 = None
+    if line2_norm:
+        line2 = [
+            int(line2_norm[0] * W),
+            int(line2_norm[1] * H),
+            int(line2_norm[2] * W),
+            int(line2_norm[3] * H),
+        ]
+    in_seq = ("A", "B")
+    out_seq = ("B", "A")
+    if reverse:
+        in_seq, out_seq = out_seq, in_seq
+
     frame_idx = 0
     rows: list[list[int]] = []
 
@@ -121,6 +136,8 @@ def run(
         tracks = tracker.update_tracks(detections, frame=frame)
 
         cv2.line(frame, (line[0], line[1]), (line[2], line[3]), (0, 255, 255), 2)
+        if line2:
+            cv2.line(frame, (line2[0], line2[1]), (line2[2], line2[3]), (0, 255, 255), 2)
 
         for tr in tracks:
             if not tr.is_confirmed():
@@ -164,17 +181,49 @@ def run(
             )
 
             # Counting on crossing
-            if len(tr.hist) >= 2 and intersect_line(tr.hist[-2], tr.hist[-1], line):
-                disp = np.hypot(cx - tr.start_pt[0], cy - tr.start_pt[1])
-                if tr.frames >= min_frames and disp >= min_disp:
-                    v = (cx - tr.start_pt[0], cy - tr.start_pt[1])
-                    dot = v[0] * line_normal[0] + v[1] * line_normal[1]
-                    if dot > 0 and tid not in counted_ids_in:
-                        counter_in += 1
-                        counted_ids_in.add(tid)
-                    elif dot < 0 and tid not in counted_ids_out:
-                        counter_out += 1
-                        counted_ids_out.add(tid)
+            if len(tr.hist) >= 2:
+                p_prev, p_curr = tr.hist[-2], tr.hist[-1]
+                if line2:
+                    if intersect_line(p_prev, p_curr, line):
+                        if getattr(tr, "last_cross", None) == "B":
+                            disp = np.hypot(cx - tr.start_pt[0], cy - tr.start_pt[1])
+                            if tr.frames >= min_frames and disp >= min_disp:
+                                seq = ("B", "A")
+                                if seq == in_seq and tid not in counted_ids_in:
+                                    counter_in += 1
+                                    counted_ids_in.add(tid)
+                                elif seq == out_seq and tid not in counted_ids_out:
+                                    counter_out += 1
+                                    counted_ids_out.add(tid)
+                            tr.last_cross = None
+                        else:
+                            tr.last_cross = "A"
+                    elif intersect_line(p_prev, p_curr, line2):
+                        if getattr(tr, "last_cross", None) == "A":
+                            disp = np.hypot(cx - tr.start_pt[0], cy - tr.start_pt[1])
+                            if tr.frames >= min_frames and disp >= min_disp:
+                                seq = ("A", "B")
+                                if seq == in_seq and tid not in counted_ids_in:
+                                    counter_in += 1
+                                    counted_ids_in.add(tid)
+                                elif seq == out_seq and tid not in counted_ids_out:
+                                    counter_out += 1
+                                    counted_ids_out.add(tid)
+                            tr.last_cross = None
+                        else:
+                            tr.last_cross = "B"
+                else:
+                    if intersect_line(p_prev, p_curr, line):
+                        disp = np.hypot(cx - tr.start_pt[0], cy - tr.start_pt[1])
+                        if tr.frames >= min_frames and disp >= min_disp:
+                            v = (cx - tr.start_pt[0], cy - tr.start_pt[1])
+                            dot = v[0] * line_normal[0] + v[1] * line_normal[1]
+                            if dot > 0 and tid not in counted_ids_in:
+                                counter_in += 1
+                                counted_ids_in.add(tid)
+                            elif dot < 0 and tid not in counted_ids_out:
+                                counter_out += 1
+                                counted_ids_out.add(tid)
 
         # Overlay counts
         cv2.putText(frame, f"IN:  {counter_in}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 160, 0), 2)
@@ -212,6 +261,13 @@ if __name__ == "__main__":
         "--line", nargs=4, type=float, required=True, metavar=("x1", "y1", "x2", "y2"),
         help="normalized coordinates (0–1) of the reference line",
     )
+    parser.add_argument(
+        "--line2",
+        nargs=4,
+        type=float,
+        metavar=("x1", "y1", "x2", "y2"),
+        help="optional second reference line for A->B/B->A counting",
+    )
     args = parser.parse_args()
 
     csv_name = args.save_csv or "stats.csv"
@@ -222,6 +278,7 @@ if __name__ == "__main__":
         out_dir=args.output,
         csv_out=csv_name,
         line_norm=args.line,
+        line2_norm=args.line2,
         trail_len=args.trail_len,
         point_radius=args.point_radius,
         min_frames=args.min_frames,
