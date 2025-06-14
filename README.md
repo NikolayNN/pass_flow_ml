@@ -9,16 +9,19 @@ python app/main.py \
     --weights weights/yolov8x.pt \
     --trail-len 30 \
     --line 0.3 0 0.3 1 \
+    --line2 0.4 0 0.4 1 \
     --min-frames 10 \
     --min-displacement 20 \
     --reverse
 
-Use `--reverse` when the in/out orientation of your line is flipped.
+Use `--reverse` when the IN/OUT orientation should be swapped.
 
-The direction of crossing is determined by the dot product of the
-track's overall displacement vector (from the first point to the last)
-and the normal of the reference line. The line orientation therefore
-defines which side is counted as "IN" and which as "OUT".
+When two lines are provided, a track must cross them sequentially.
+Crossing from line A to line B counts as IN, while B to A counts as OUT
+(unless `--reverse` is used, which swaps the meaning). Any other
+combinations are ignored, reducing false counts from people lingering on
+the threshold. With a single line specified, the old displacement based
+method is used.
 
-Each track also shows this displacement vector on the video as a yellow
-arrow from its first point to the current position.
+Each track also shows its displacement vector on the video as a yellow
+arrow from the first point to the current position.
