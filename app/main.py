@@ -6,7 +6,8 @@ entries/exits across a user‑defined reference line — no smoothing or hystere
 Now supports:
 * `--output` – choose the folder for processed video & CSV;
 * `--trail-len` – length of the visual track (history) per object;
-* `--point-radius` – radius of the base‑point circle.
+* `--point-radius` – radius of the base‑point circle;
+* `--reverse` – swap in/out orientation.
 """
 
 import argparse
@@ -56,6 +57,7 @@ def run(
     point_radius: int = 4,
     min_frames: int = 10,
     min_disp: float = 20.0,
+    reverse: bool = False,
 ) -> None:
     """Process stream and save processed.mp4 + CSV into *out_dir*.
 
@@ -91,6 +93,8 @@ def run(
     # Precompute the normal vector of the line pointing to its left side
     vec = (line[2] - line[0], line[3] - line[1])
     line_normal = (-vec[1], vec[0])
+    if reverse:
+        line_normal = (-line_normal[0], -line_normal[1])
 
     frame_idx = 0
     rows: list[list[int]] = []
@@ -200,6 +204,11 @@ if __name__ == "__main__":
     parser.add_argument("--min-frames", type=int, default=10, help="minimum track length in frames to count")
     parser.add_argument("--min-displacement", type=float, default=20.0, help="minimum displacement in pixels to count")
     parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="swap the in/out orientation of the reference line",
+    )
+    parser.add_argument(
         "--line", nargs=4, type=float, required=True, metavar=("x1", "y1", "x2", "y2"),
         help="normalized coordinates (0–1) of the reference line",
     )
@@ -217,4 +226,5 @@ if __name__ == "__main__":
         point_radius=args.point_radius,
         min_frames=args.min_frames,
         min_disp=args.min_displacement,
+        reverse=args.reverse,
     )

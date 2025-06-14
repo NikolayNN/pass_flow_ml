@@ -7,7 +7,10 @@ python app/main.py \
     --trail-len 30 \
     --line 0.3 0 0.3 1 \
     --min-frames 10 \
-    --min-displacement 20
+    --min-displacement 20 \
+    --reverse
+
+Use `--reverse` when the in/out orientation of your line is flipped.
 
 The direction of crossing is determined by the dot product of the
 track's overall displacement vector (from the first point to the last)
